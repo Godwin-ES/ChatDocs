@@ -160,7 +160,7 @@ async def list_documents(user_id: str = Depends(get_current_user_id)):
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- Serve Frontend ---
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 @app.get("/")
 async def serve_frontend():
