@@ -164,10 +164,8 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 @app.get("/")
 async def serve_frontend():
-    if os.path.exists("static/index.html"):
-        return FileResponse("static/index.html")
-    if os.path.exists("index.html"):
-        return FileResponse("index.html")
+    if os.path.exists("app/static/index.html"):
+        return FileResponse("app/static/index.html")
     return {"message": "Backend API is running. Please place index.html in /static folder."}
 
 if __name__ == "__main__":
