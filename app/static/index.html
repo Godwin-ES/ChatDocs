@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic RAG Assistant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .markdown-body ul { list-style-type: disc; margin-left: 1.5em; }
+        .markdown-body ol { list-style-type: decimal; margin-left: 1.5em; }
+        .markdown-body p { margin-bottom: 0.5em; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #1f2937; }
+        ::-webkit-scrollbar-thumb { background: #4b5563; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 font-sans antialiased h-screen overflow-hidden">
+
+<div id="app" class="h-full flex flex-col">
+
+    <div v-if="!user" class="flex-1 flex flex-col items-center justify-center bg-gray-900 p-4">
+        <div class="max-w-md w-full bg-gray-800 rounded-xl shadow-2xl p-8 text-center border border-gray-700">
+            <div class="mb-6">
+                <i class="fas fa-brain text-5xl text-purple-500"></i>
+            </div>
+            <h1 class="text-3xl font-bold mb-2">ChatDocs</h1>
+            <p class="text-gray-400 mb-8">Agentic Document Assistant powered by Phidata.</p>
+            <a href="/auth/login" class="block w-full bg-white hover:bg-gray-100 text-gray-900 font-bold py-3 px-4 rounded-lg transition duration-200 flex items-center justify-center gap-3">
+                <img src="https://www.google.com/favicon.ico" class="w-5 h-5" alt="Google">
+                Sign in with Google
+            </a>
+        </div>
+    </div>
+
+    <div v-else class="flex-1 flex overflow-hidden">
+        
+        <div class="w-80 bg-gray-800 flex flex-col border-r border-gray-700 hidden md:flex">
+            <div class="p-4 border-b border-gray-700 flex items-center justify-between">
+                <span class="font-bold text-lg text-purple-400">Knowledge Base</span>
+                <button @click="logout" class="text-gray-400 hover:text-white" title="Logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+
+            <div class="p-4">
+                <div class="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center hover:border-purple-500 hover:bg-gray-750 transition cursor-pointer relative">
+                    <input type="file" multiple @change="handleFileUpload" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" :disabled="isUploading">
+                    <div v-if="isUploading">
+                        <i class="fas fa-spinner fa-spin text-2xl text-purple-500 mb-2"></i>
+                        <p class="text-sm text-purple-400">Ingesting...</p>
+                    </div>
+                    <div v-else>
+                        <i class="fas fa-cloud-upload-alt text-2xl text-gray-400 mb-2"></i>
+                        <p class="text-sm text-gray-400">Drag files here</p>
+                        <p class="text-xs text-gray-500 mt-1">PDF, DOCX, TXT</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto px-4">
+                <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Indexed Documents</h3>
+                <div v-if="documents.length === 0" class="text-center text-gray-600 text-sm py-4">
+                    No documents indexed.
+                </div>
+                <ul class="space-y-2">
+                    <li v-for="doc in documents" :key="doc" class="group flex items-center justify-between p-2 rounded hover:bg-gray-700 transition">
+                        <div class="flex items-center truncate">
+                            <i class="far fa-file-alt text-gray-400 mr-2"></i>
+                            <span class="text-sm truncate w-48" :title="doc">{{ doc }}</span>
+                        </div>
+                        <button @click="deleteDocument(doc)" class="text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="p-4 border-t border-gray-700">
+                <button @click="clearKnowledgeBase" class="w-full py-2 px-4 bg-red-900/30 hover:bg-red-900/50 text-red-400 rounded transition text-sm flex items-center justify-center gap-2">
+                    <i class="fas fa-trash"></i> Reset Knowledge Base
+                </button>
+                <div class="mt-4 flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-sm font-bold">
+                        {{ name ? name.charAt(0).toUpperCase() : 'U' }}
+                    </div>
+                    <div class="overflow-hidden">
+                        <p class="text-sm font-medium truncate">{{ name }}</p>
+                        <p class="text-xs text-gray-500">Online</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex-1 flex flex-col bg-gray-900 relative">
+            <div class="h-16 border-b border-gray-800 flex items-center px-6 bg-gray-900/95 backdrop-blur z-10">
+                <h2 class="font-semibold text-purple-400">Agent Chat</h2>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-6 space-y-6" id="chat-container">
+                <div v-if="messages.length === 0" class="h-full flex flex-col items-center justify-center text-gray-500 opacity-50">
+                    <i class="fas fa-robot text-6xl mb-4"></i>
+                    <p>Upload a document and ask questions to start.</p>
+                </div>
+                <div v-for="(msg, index) in messages" :key="index" class="flex gap-4" :class="msg.role === 'user' ? 'flex-row-reverse' : ''">
+                    <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center" :class="msg.role === 'user' ? 'bg-purple-600' : 'bg-green-600'">
+                        <i :class="msg.role === 'user' ? 'fas fa-user' : 'fas fa-robot text-sm'"></i>
+                    </div>
+                    <div class="max-w-3xl rounded-2xl px-5 py-3 shadow-sm markdown-body text-sm leading-relaxed" 
+                         :class="msg.role === 'user' ? 'bg-purple-600 text-white rounded-tr-none' : 'bg-gray-800 text-gray-100 rounded-tl-none border border-gray-700'" 
+                         v-html="renderMarkdown(msg.content)">
+                    </div>
+                </div>
+                </div>
+
+            <div class="p-4 bg-gray-900">
+                <div class="max-w-4xl mx-auto relative">
+                    <form @submit.prevent="sendMessage" class="relative">
+                        <input v-model="userInput" type="text" placeholder="Ask about your documents..." class="w-full bg-gray-800 text-white rounded-full pl-6 pr-14 py-4 focus:outline-none focus:ring-2 focus:ring-purple-500 border border-gray-700 shadow-lg placeholder-gray-500 transition-all" :disabled="isThinking">
+                        <button type="submit" class="absolute right-2 top-2 w-10 h-10 bg-purple-600 hover:bg-purple-500 text-white rounded-full flex items-center justify-center transition disabled:opacity-50 disabled:cursor-not-allowed" :disabled="!userInput.trim() || isThinking">
+                            <i class="fas fa-paper-plane text-sm"></i>
+                        </button>
+                    </form>
+                    <p class="text-center text-xs text-gray-600 mt-2">AI Agent can make mistakes. Check important info.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const { createApp } = Vue;
+
+    createApp({
+        data() {
+            return {
+                user: null, name: null, messages: [], documents: [], userInput: '', isThinking: false, isUploading: false, threadId: null
+            }
+        },
+        async mounted() {
+            await this.checkAuth();
+            if (this.user) {
+                this.fetchDocuments();
+                this.messages.push({
+                    role: 'assistant',
+                    content: `Hello **${this.name}**! I'm your document assistant. Ready to help.`
+                });
+            }
+        },
+        methods: {
+            renderMarkdown(text) { return marked.parse(text || ""); },
+            async checkAuth() {
+                try {
+                    const res = await fetch('/auth/me');
+                    if (res.ok) {
+                        const data = await res.json();
+                        this.user = data.user_id; this.name = data.name;
+                    }
+                } catch (e) { console.log("Not logged in"); }
+            },
+            logout() { window.location.href = '/auth/logout'; },
+            async fetchDocuments() {
+                try {
+                    const res = await fetch('/documents');
+                    const data = await res.json();
+                    this.documents = data.documents;
+                } catch (e) { console.error("Failed to fetch docs"); }
+            },
+            async handleFileUpload(event) {
+                const files = event.target.files;
+                if (!files.length) return;
+                this.isUploading = true;
+                const formData = new FormData();
+                for (let i = 0; i < files.length; i++) formData.append('files', files[i]);
+                try {
+                    const res = await fetch('/upload', { method: 'POST', body: formData });
+                    if (res.ok) await this.fetchDocuments();
+                    else alert("Upload failed");
+                } catch (e) { alert("Error uploading file"); } finally { this.isUploading = false; event.target.value = ''; }
+            },
+            async deleteDocument(filename) {
+                if (!confirm(`Delete ${filename}?`)) return;
+                try {
+                    await fetch('/delete-document', {
+                        method: 'DELETE',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ filename })
+                    });
+                    this.fetchDocuments();
+                } catch (e) { console.error("Delete failed"); }
+            },
+            async clearKnowledgeBase() {
+                if (!confirm("Are you sure? This deletes ALL your documents.")) return;
+                try {
+                    await fetch('/clear-knowledge', { method: 'DELETE' });
+                    this.fetchDocuments();
+                    this.messages = [];
+                } catch (e) { console.error("Clear failed"); }
+            },
+            // --- UPDATED STREAMING LOGIC ---
+            async sendMessage() {
+                const text = this.userInput.trim();
+                if (!text) return;
+
+                // 1. Add User Message
+                this.messages.push({ role: 'user', content: text });
+                this.userInput = '';
+                this.isThinking = true;
+
+                // 2. Add Empty Assistant Message (to fill with stream)
+                this.messages.push({ role: 'assistant', content: "" });
+                const assistantMsgIndex = this.messages.length - 1;
+
+                this.$nextTick(() => { const container = document.getElementById('chat-container'); container.scrollTop = container.scrollHeight; });
+
+                try {
+                    const res = await fetch('/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: text, thread_id: this.threadId })
+                    });
+
+                    // 3. Update Thread ID if provided in headers
+                    const newThreadId = res.headers.get("X-Thread-ID");
+                    if (newThreadId) this.threadId = newThreadId;
+
+                    // 4. Setup Stream Reader
+                    const reader = res.body.getReader();
+                    const decoder = new TextDecoder();
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        
+                        // 5. Decode and append chunk
+                        const chunk = decoder.decode(value, { stream: true });
+                        this.messages[assistantMsgIndex].content += chunk;
+                        
+                        // 6. Scroll to bottom
+                        this.$nextTick(() => { 
+                            const container = document.getElementById('chat-container'); 
+                            container.scrollTop = container.scrollHeight; 
+                        });
+                    }
+                } catch (e) {
+                    this.messages[assistantMsgIndex].content = "⚠️ Error: Connection to agent failed.";
+                    console.error(e);
+                } finally {
+                    this.isThinking = false;
+                }
+            }
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
