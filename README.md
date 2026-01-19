@@ -1,4 +1,4 @@
-# FastAPI RAG
+# RAG APP
 
 A production-ready Retrieval-Augmented Generation (RAG) API built with FastAPI, featuring Google OAuth authentication, multi-user document management, and intelligent AI-powered question-answering capabilities.
 
