@@ -1,6 +1,7 @@
 """Configuration settings for the SQL Web Agent API"""
 import os
 from dotenv import load_dotenv, find_dotenv
+import json
 
 # Load environment variables
 load_dotenv(find_dotenv())
@@ -30,3 +31,5 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
 SECRET_KEY = os.getenv("SECRET_KEY")
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
+GCS_CREDENTIALS_JSON = json.loads(os.environ["GCS_CREDENTIALS_JSON"])

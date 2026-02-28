@@ -1,5 +1,4 @@
 import os
-import shutil
 import uuid
 from typing import List, Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Request
@@ -32,8 +31,6 @@ google_sso = GoogleSSO(
 )
 
 serializer = URLSafeTimedSerializer(SECRET_KEY)
-UPLOAD_DIR = "temp_uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # --- Pydantic Models ---
 class ChatRequest(BaseModel):
@@ -119,14 +116,8 @@ async def upload_documents(files: List[UploadFile] = File(...), user_id: str = D
     processed_files = []
     for file in files:
         try:
-            file_path = os.path.join(UPLOAD_DIR, file.filename)
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-            
-            process_files(file_path, file.filename, user_id)
-            
-            if os.path.exists(file_path):
-                os.remove(file_path)
+            file_bytes = await file.read()
+            process_files(file_bytes, file.filename, user_id)
             processed_files.append(file.filename)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error processing {file.filename}: {str(e)}")
