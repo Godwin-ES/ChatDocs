@@ -27,13 +27,18 @@ A production-ready Retrieval-Augmented Generation (RAG) API built with FastAPI, 
 
 ### Upload Flow
 ```
-POST /upload
+POST /upload  (returns 202 as soon as the file is saved)
     │
     ├──► Store bytes in GCS: {user_id}/{filename}   (permanent, no temp file)
-    ├──► Agno fetches from GCS → BytesIO → chunk → embed
-    ├──► Embed chunks → Pinecone (namespace: user_id)
-    └──► Save metadata → MongoDB
+    ├──► Save metadata → MongoDB with status "processing"
+    └──► Background worker (app/ingest.py)
+            ├──► Parse + chunk from memory
+            ├──► Batch-embed chunks ("passage: " prefix for e5)
+            ├──► Upsert → Pinecone (namespace: user_id, ids "<doc key>#<n>")
+            └──► MongoDB status → "ready" (or "failed" with a reason)
 ```
+The UI polls `/documents` while anything is processing. Files still "processing" when the
+server stops are re-queued from GCS on the next start.
 
 ### Isolation Per Layer
 | Layer | Strategy |
@@ -102,13 +107,22 @@ POST /upload
    GOOGLE_REDIRECT_URI=http://localhost:8000/auth/callback
    SECRET_KEY=your_secret_key_for_sessions
 
+   # Optional
+   ALLOWED_ORIGINS=https://your-frontend.example.com  # only needed for a frontend on another origin
+   MAX_UPLOAD_MB=20
+   COOKIE_SECURE=true  # defaults to true when GOOGLE_REDIRECT_URI is https
+
    # Google Cloud Storage (document storage)
    GCS_BUCKET_NAME=your_gcs_bucket_name
    GCS_CREDENTIALS_JSON={"type":"service_account","project_id":"..."}  # inline service account JSON
-   GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json        # used by Agno ADC
+
+   # Retrieval & ingestion (optional)
+   HYBRID_SEARCH=auto   # auto | true | false; auto enables it on dotproduct indexes
+   HYBRID_ALPHA=0.75    # 1.0 = semantic only, 0.0 = keyword only
+   INGEST_WORKERS=2     # documents indexed in parallel
    ```
 
-   > **GCS setup**: Create a bucket, create a Service Account with the `Storage Object Admin` role scoped to that bucket, download the JSON key, and set both `GCS_CREDENTIALS_JSON` (inline JSON for uploads/deletes) and `GOOGLE_APPLICATION_CREDENTIALS` (file path for Agno's internal GCS reads).
+   > **GCS setup**: Create a bucket, create a Service Account with the `Storage Object Admin` role scoped to that bucket, download the JSON key, and set `GCS_CREDENTIALS_JSON` to its contents as inline JSON.
 
 4. **Run the application**
    ```bash
@@ -133,14 +147,33 @@ POST /upload
     "thread_id": "optional-thread-id"
   }
   ```
+  Streams newline-delimited JSON (`application/x-ndjson`); the thread id is returned in the `X-Thread-ID` header:
+  ```
+  {"type": "status", "text": "Searching your documents", "detail": "main topic"}
+  {"type": "sources", "items": [{"name": "report.pdf", "page": 3}]}
+  {"type": "delta", "text": "The document..."}
+  {"type": "done"}
+  ```
+
+### Conversations
+
+- **GET** `/threads` - List the current user's conversations (newest first)
+- **GET** `/threads/{thread_id}` - Get a conversation's messages, with sources
+- **DELETE** `/threads/{thread_id}` - Delete a conversation
 
 ### Document Management
 
-- **POST** `/upload` - Upload documents (PDF, DOCX, TXT)
+- **POST** `/upload` - Upload documents (PDF, DOCX, TXT, MD; up to `MAX_UPLOAD_MB` each)
   - Multipart form-data with `files` field
   - Files are stored in GCS and indexed into Pinecone — no local disk writes
+  - Returns a per-file `results` list (`{"filename", "ok", "error"}`); re-uploading a filename replaces it
 
-- **GET** `/documents` - List all uploaded documents for the current user
+- **GET** `/documents` - List the current user's documents as `{"filename", "size", "uploaded_at", "status", "error", "chunks"}` objects; `status` is `processing`, `ready` or `failed`
+
+- **POST** `/documents/retry` - Re-index a failed document from its stored file
+  ```json
+  { "filename": "example.pdf" }
+  ```
 
 - **DELETE** `/delete-document` - Delete a specific document from GCS, Pinecone, and MongoDB
   ```json
@@ -216,8 +249,25 @@ fastapi_rag/
 
 ### Vector Database
 - **Provider**: Pinecone
-- **Metric**: Cosine similarity
+- **Metric**: Cosine similarity (dotproduct enables hybrid search)
 - **Cloud**: AWS (us-east-1)
+- **Embeddings**: `intfloat/multilingual-e5-large`, batch-embedded and L2-normalised, with the
+  `query: ` / `passage: ` prefixes the model was trained with
+
+### Re-indexing
+Chunks embedded before the e5 prefixes were added should be re-indexed once. Originals are
+re-read from GCS, so nothing needs re-uploading:
+```bash
+python -m app.reindex --dry-run   # see what will be re-indexed
+python -m app.reindex             # re-index outdated documents
+```
+
+### Enabling hybrid search
+Hybrid search adds BM25 keyword matching, which helps with names, codes and numbers. Pinecone
+only supports it on indexes created with the **dotproduct** metric:
+1. Create a new serverless index: 1024 dimensions, metric `dotproduct`.
+2. Point `PINECONE_INDEX` at it and restart. With `HYBRID_SEARCH=auto` it turns on by itself.
+3. Run `python -m app.reindex --all` to fill the new index from GCS.
 
 ### AI Agent Features
 - Agentic memory enabled
