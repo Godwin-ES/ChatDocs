@@ -1,4 +1,4 @@
-# RAG APP
+# ChatDocs
 
 A production-ready Retrieval-Augmented Generation (RAG) API built with FastAPI, featuring Google OAuth authentication, multi-user document management, persistent Google Cloud Storage, and intelligent AI-powered question-answering capabilities.
 
@@ -61,8 +61,8 @@ server stops are re-queued from GCS on the next start.
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/Godwin-ES/fastapi_rag.git
-   cd fastapi_rag
+   git clone https://github.com/Godwin-ES/ChatDocs.git
+   cd ChatDocs
    ```
 
 2. **Install dependencies using uv (recommended)**
@@ -224,7 +224,7 @@ curl -X DELETE "http://localhost:8000/delete-document" \
 ## 🧩 Project Structure
 
 ```
-fastapi_rag/
+ChatDocs/
 ├── app/
 │   ├── main.py          # FastAPI application and routes
 │   ├── agent.py         # RAG agent configuration
